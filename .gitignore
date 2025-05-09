@@ -6,3 +6,6 @@ src/__pycache__/
 
 # Ignore CSV data files
 src/posts_*.csv
+
+# Ignore .env file
+.env
