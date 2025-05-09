@@ -1,6 +1,6 @@
 import os
 from telethon.sync import TelegramClient
-from telethon.tl.types import MessageService, ChannelForbidden
+from telethon.tl.types import MessageService, ChannelForbidden, User, Channel # Added User, Channel
 import pandas as pd
 from datetime import datetime
 import asyncio
@@ -52,20 +52,15 @@ ORGANIZATIONAL_KEYWORDS = [
     "гос", "муп", "гуп", "фгуп", "фгбу", "мбу", "мку"
 ]
 
-async def is_organizational_channel(client, channel_username):
+async def is_organizational_channel(client, channel_entity): # Changed to accept entity
     """Checks if a channel seems to be organizational based on its info."""
-    try:
-        entity = await client.get_entity(channel_username)
-    except (ValueError, ChannelForbidden) as e:
-        # ValueError if channel not found, ChannelForbidden if access is denied
-        # In these cases, we can't determine, so assume not organizational for now,
-        # or let the main parsing logic handle the error.
-        # For this specific check, we'll return False as we couldn't verify.
-        print(f"Could not get entity for {channel_username}: {e}")
-        return False # Or raise an error to be caught by the caller
+    # No longer needs to call client.get_entity here, assumes channel_entity is already a valid entity
+    # However, the original function design might be called with username string elsewhere,
+    # so for safety, we can add a check or ensure it's always called with an entity.
+    # For now, let's assume it's called with an entity that is a Channel.
 
-    title = entity.title.lower() if hasattr(entity, 'title') and entity.title else ""
-    about = entity.about.lower() if hasattr(entity, 'about') and entity.about else ""
+    title = channel_entity.title.lower() if hasattr(channel_entity, 'title') and channel_entity.title else ""
+    about = channel_entity.about.lower() if hasattr(channel_entity, 'about') and channel_entity.about else ""
 
     # Check for keywords in title
     for keyword in ORGANIZATIONAL_KEYWORDS:
@@ -105,13 +100,33 @@ async def parse_channel_posts(channel, date_from_str, date_to_str=None):
     posts = []
     async with client:
         if not await client.is_user_authorized():
-            await client.start(phone=PHONE_NUMBER)
+            # Consider how to handle this in a deployed bot - manual intervention might be needed.
+            # For now, let it try to start, but this might fail on a server without input.
+            try:
+                await client.start(phone=PHONE_NUMBER)
+            except RuntimeError as e:
+                print(f"ERROR: Could not authorize Telethon client: {e}. Ensure session is valid or can be created.")
+                return "error_telethon_auth" # New error type
 
-        # Check if channel is organizational
-        if await is_organizational_channel(client, channel):
+        try:
+            entity = await client.get_entity(channel)
+        except ValueError: # Channel not found
+            print(f"ERROR: Channel or user '{channel}' not found.")
+            return "error_channel_not_found"
+        except Exception as e: # Other potential errors like network issues
+            print(f"ERROR: Could not get entity for '{channel}': {e}")
+            return "error_getting_entity"
+
+        # SECURITY CHECK: Ensure the entity is a public channel
+        if not isinstance(entity, Channel) or not entity.username:
+            print(f"ERROR: '{channel}' is not a public channel (it might be a user, private group/channel, or invalid).")
+            return "error_not_public_channel" # New error type for bot.py to handle
+
+        # Now that we have the entity and it's a public channel, pass it to is_organizational_channel
+        if await is_organizational_channel(client, entity): # Pass the entity directly
             return "error_organizational"
 
-        async for message in client.iter_messages(channel):  # reverse=False по умолчанию
+        async for message in client.iter_messages(entity): # Use the validated entity
             if isinstance(message, MessageService):
                 continue
             msg_date = message.date.date()

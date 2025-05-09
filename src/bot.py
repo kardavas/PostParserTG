@@ -99,7 +99,7 @@ async def get_channel_and_parse(update: Update, context: ContextTypes.DEFAULT_TY
         channel = channel_input
 
     date_to = datetime.now().strftime('%Y-%m-%d')
-    date_from = (datetime.now() - timedelta(days=2*365)).strftime('%Y-%m-%d')
+    date_from = (datetime.now() - timedelta(days=2*365)).strftime('%Y-%m-%d') # Corrected format
 
     await context.bot.send_chat_action(chat_id=chat_id, action=ChatAction.TYPING)
     await update.message.reply_text(
@@ -110,13 +110,22 @@ async def get_channel_and_parse(update: Update, context: ContextTypes.DEFAULT_TY
         logger.info(f"Парсим канал: {channel} с {date_from} по {date_to}")
         result = await parse_channel_posts(channel, date_from, date_to)
 
-        if result == "error_organizational":
+        # Handle new error types from parser.py
+        error_messages = {
+            "error_organizational": f"Канал \"{channel}\" выглядит как канал организации. Пожалуйста, предоставьте ссылку на личный канал.",
+            "error_telethon_auth": "Ошибка авторизации Telethon. Не удалось подключиться к Telegram для парсинга.",
+            "error_channel_not_found": f"Канал или пользователь '{channel}' не найден. Пожалуйста, проверьте ссылку.",
+            "error_getting_entity": f"Не удалось получить информацию о '{channel}'. Возможно, это приватный канал/группа или возникла сетевая проблема.",
+            "error_not_public_channel": f"Указанный '{channel}' не является публичным каналом. Пожалуйста, укажите ссылку на публичный Telegram-канал (например, @channel_name или https://t.me/channel_name)."
+        }
+
+        if result in error_messages:
             keyboard = [[InlineKeyboardButton("🔍 Новый анализ", callback_data="start_profile_analysis")]]
             reply_markup = InlineKeyboardMarkup(keyboard)
-            await update.message.reply_text(f"Канал \"{channel}\" выглядит как канал организации. Пожалуйста, предоставьте ссылку на личный канал.", reply_markup=reply_markup)
+            await update.message.reply_text(error_messages[result], reply_markup=reply_markup)
             return ConversationHandler.END
         
-        csv_path = result
+        csv_path = result # If no error, result is the csv_path
 
         if not csv_path or not os.path.exists(csv_path):
             keyboard = [[InlineKeyboardButton("🔍 Новый анализ", callback_data="start_profile_analysis")]]
