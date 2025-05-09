@@ -1,6 +1,6 @@
 import os
 from telethon.sync import TelegramClient
-from telethon.tl.types import MessageService
+from telethon.tl.types import MessageService, ChannelForbidden
 import pandas as pd
 from datetime import datetime
 import asyncio
@@ -41,9 +41,52 @@ API_ID = 28578374
 API_HASH = "269d9efb4a74a9167bc106260d3f7bd7"
 PHONE_NUMBER = "+79850809094"  # Добавлен номер для автоматической передачи
 
-# Функция для парсинга постов из канала на заданную дату
-# Возвращает путь к CSV-файлу
+ORGANIZATIONAL_KEYWORDS = [
+    "официальный", "ведомство", "министерство", "государственный", "служба",
+    "департамент", "администрация", "компания", "организация", "пресс-служба",
+    "новости", "тв", "радио", "газета", "журнал", "банк", "фонд", "партия",
+    "завод", "институт", "университет", "школа", "бренд", "магазин", "сеть",
+    "official", "department", "ministry", "government", "service", "company",
+    "organization", "press service", "news", "tv", "radio", "gazette", "journal",
+    "bank", "foundation", "party", "brand", "store", "chain", "ltd", "inc", "corp",
+    "гос", "муп", "гуп", "фгуп", "фгбу", "мбу", "мку"
+]
 
+async def is_organizational_channel(client, channel_username):
+    """Checks if a channel seems to be organizational based on its info."""
+    try:
+        entity = await client.get_entity(channel_username)
+    except (ValueError, ChannelForbidden) as e:
+        # ValueError if channel not found, ChannelForbidden if access is denied
+        # In these cases, we can't determine, so assume not organizational for now,
+        # or let the main parsing logic handle the error.
+        # For this specific check, we'll return False as we couldn't verify.
+        print(f"Could not get entity for {channel_username}: {e}")
+        return False # Or raise an error to be caught by the caller
+
+    title = entity.title.lower() if hasattr(entity, 'title') and entity.title else ""
+    about = entity.about.lower() if hasattr(entity, 'about') and entity.about else ""
+
+    # Check for keywords in title
+    for keyword in ORGANIZATIONAL_KEYWORDS:
+        if keyword in title:
+            return True
+
+    # Check for keywords in description (about)
+    for keyword in ORGANIZATIONAL_KEYWORDS:
+        if keyword in about:
+            return True
+            
+    # Optionally, consider verified status, but it's tricky as individuals can be verified.
+    # if hasattr(entity, 'verified') and entity.verified:
+    #     # This might be too broad, many public figures are verified.
+    #     # Consider if specific keywords are ALSO present.
+    #     pass
+
+    return False
+
+# Функция для парсинга постов из канала на заданную дату
+# Возвращает путь к CSV-файлу или специальную строку, если канал организационный
 async def parse_channel_posts(channel, date_from_str, date_to_str=None):
     date_from = datetime.strptime(date_from_str, "%Y-%m-%d")
     if date_to_str:
@@ -63,6 +106,11 @@ async def parse_channel_posts(channel, date_from_str, date_to_str=None):
     async with client:
         if not await client.is_user_authorized():
             await client.start(phone=PHONE_NUMBER)
+
+        # Check if channel is organizational
+        if await is_organizational_channel(client, channel):
+            return "error_organizational"
+
         async for message in client.iter_messages(channel):  # reverse=False по умолчанию
             if isinstance(message, MessageService):
                 continue
