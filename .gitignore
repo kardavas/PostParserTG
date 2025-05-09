@@ -1,0 +1,8 @@
+# Ignore session files
+src/tg_session.session
+
+# Ignore compiled Python files
+src/__pycache__/
+
+# Ignore CSV data files
+src/posts_*.csv
