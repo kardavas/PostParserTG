@@ -1,8 +1,8 @@
 import logging
 import os
 from dotenv import load_dotenv
-from telegram import Update, ReplyKeyboardRemove
-from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, ConversationHandler, MessageHandler, filters
+from telegram import Update, ReplyKeyboardRemove, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, ConversationHandler, MessageHandler, filters, CallbackQueryHandler
 from parser import parse_channel_posts
 import asyncio
 
@@ -18,7 +18,33 @@ CHANNEL, DATE_FROM, DATE_TO = range(3)
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.info(f"/start from {update.effective_user.id}")
-    await update.message.reply_text("Привет! Для парсинга напиши /parse")
+    keyboard = [[InlineKeyboardButton("🚀 Начать парсинг", callback_data="start_parsing")]]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    welcome_message = (
+        "🤖 *Добро пожаловать в Post Parser Bot!*\n\n"
+        "Этот бот поможет вам парсить посты из открытых Telegram каналов.\n\n"
+        "📊 *Что умеет бот:*\n"
+        "• Извлекает посты за указанный период\n"
+        "• Определяет тип поста (оригинал/репост)\n"
+        "• Подсчитывает количество просмотров\n"
+        "• Экспортирует данные в CSV файл\n\n"
+        "Нажмите кнопку ниже, чтобы начать!"
+    )
+    
+    await update.message.reply_text(
+        welcome_message, 
+        parse_mode='Markdown', 
+        reply_markup=reply_markup
+    )
+
+async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    
+    if query.data == "start_parsing":
+        await query.edit_message_text("Пришли ссылку на канал или username (например, https://t.me/durov или durov):")
+        return CHANNEL
 
 async def parse_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Пришли ссылку на канал или username (например, https://t.me/durov или durov):")
@@ -62,7 +88,7 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
 if __name__ == "__main__":
     app = ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).build()
     conv_handler = ConversationHandler(
-        entry_points=[CommandHandler("parse", parse_start)],
+        entry_points=[CommandHandler("parse", parse_start), CallbackQueryHandler(button_callback, pattern="start_parsing")],
         states={
             CHANNEL: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_channel)],
             DATE_FROM: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_date_from)],
